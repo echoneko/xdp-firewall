@@ -1,0 +1,16 @@
+# IDE and editors
+.vscode/
+*.swp
+
+# Compiled files
+ebpfdrop
+
+# Generated eBPF files
+drop_bpfeb.go
+drop_bpfel.go
+drop_bpfeb.o
+drop_bpfel.o
+
+# Service files
+*.out
+*.log
