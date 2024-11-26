@@ -8,8 +8,8 @@ generate:
 build:
 	@ go build -o ebpfdrop
 
-.PHONY: run
+.PHONY: run-config
 ## run: run the application
-run: generate build
-	@ if [ -z "$(BLOCKED_IP)" ]; then echo >&2 please set blocked ip via the variable BLOCKED_IP; exit 2; fi
-	@ ./ebpfdrop $(BLOCKED_IP) $(INTERFACE)
+run-config: generate build
+	@ if [ -z "$(CONFIG_FILE)" ]; then echo >&2 "please set CONFIG_FILE"; exit 2; fi
+	@ ./ebpfdrop $(CONFIG_FILE) $(INTERFACE)

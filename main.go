@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -10,7 +11,49 @@ import (
 	"syscall"
 
 	"github.com/cilium/ebpf/link"
+	"gopkg.in/yaml.v3"
 )
+
+// Config strucutre for configuration file
+type Config struct {
+	BlockedIPs []string `json:"blocked_ips" yaml:"blocked_ips"`
+	//TODO BlockedPorts []int `json:"blocked_ports" yaml:"blocked_ports"`
+}
+
+// LoadConfig reads configuration from a file
+func loadConfig(path string) (*Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open config file: %w", err)
+	}
+
+	defer file.Close()
+
+	config := &Config{}
+	switch ext := getFileExtension(path); ext {
+	case "yaml", "yml":
+		if err := yaml.NewDecoder(file).Decode(config); err != nil {
+			return nil, fmt.Errorf("Failed to parse YAML: %w", err)
+		}
+	case "json":
+		if err := json.NewDecoder(file).Decode(config); err != nil {
+			return nil, fmt.Errorf("Failed to parse JSON: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported file extension: %s", ext)
+	}
+	return config, nil
+}
+
+// GetFileExtension extracts the file extension from the path
+func getFileExtension(path string) string {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '.' {
+			return path[i+1:]
+		}
+	}
+	return ""
+}
 
 func ipToUint32(ip string) (uint32, error) {
 	parsedIP := net.ParseIP(ip)
@@ -25,6 +68,19 @@ func ipToUint32(ip string) (uint32, error) {
 }
 
 func main() {
+	// Get the configuration file from command-line arguments
+	if len(os.Args) < 2 {
+		log.Fatalf("usage: %s <config-file> [interface]", os.Args[0])
+	}
+	configPath := os.Args[1]
+
+	// Load configuration
+	config, err := loadConfig(configPath)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+	fmt.Printf("Loaded configuration: %+v\n", config)
+
 	// Load the eBPF objects from the generated code
 	var objs dropObjects
 	if err := loadDropObjects(&objs, nil); err != nil {
@@ -32,25 +88,20 @@ func main() {
 	}
 	defer objs.Close()
 
-	// Get the IP address to block from the command line arguments
-	if len(os.Args) < 2 {
-		log.Fatalf("usage: %s <blocked-ip> [interface]", os.Args[0])
-	}
-	blockedIP := os.Args[1]
-	blockedIPUint32, err := ipToUint32(blockedIP)
-	if err != nil {
-		log.Fatalf("invalid IP address: %v", err)
-	}
-
-	fmt.Printf("Blocking IP: %s (0x%x)\n", blockedIP, blockedIPUint32)
-
-	// Write the blocked IP address to the BPF map
-	key := uint32(0)
-	if err := objs.BlockedIpMap.Put(key, blockedIPUint32); err != nil {
-		log.Fatalf("writing to BPF map: %v", err)
+	// Populate blocked IPs into the eBPF map
+	for i, ip := range config.BlockedIPs {
+		ipUint32, err := ipToUint32(ip)
+		if err != nil {
+			log.Printf("invalid IP address in config: %s", ip)
+			continue
+		}
+		key := uint32(i)
+		if err := objs.BlockedIpMap.Put(key, ipUint32); err != nil {
+			log.Printf("failed to add IP to map: %v", err)
+		}
 	}
 
-	// Find the network interface to attach the program to
+	// Use interface provided by user or default to eth0
 	ifaceName := "eth0"
 	if len(os.Args) > 2 {
 		ifaceName = os.Args[2]

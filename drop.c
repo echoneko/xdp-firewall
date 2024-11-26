@@ -9,7 +9,7 @@
 // Define a BPF map to store the blocked IP address
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY); // Map type is an array
-    __uint(max_entries, 1);           // Only one entry in the map
+    __uint(max_entries, 100);           // Only one entry in the map
     __type(key, __u32);               // Key type is a 32-bit unsigned integer
     __type(value, __u32);             // Value type is a 32-bit unsigned integer
 } blocked_ip_map SEC(".maps");        // Place the map in the ".maps" section
